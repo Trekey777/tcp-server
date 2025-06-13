@@ -56,48 +56,51 @@ void TestHttpRequest()
         std::cout<<e.first<<":"<<e.second<<std::endl;
     }
     std::cout<<request._body<<std::endl;
+    std::cout<<"Content-Length"<<request.GetContentLength()<<std::endl;
+    std::cout<<"Connection"<<request.IsLongConnection()<<std::endl;
     request.Reset();
 }
-void RegularHttpHeader()
-{
-    std::string url1="GET /dir1/dir2/a.html?a=1&b=2&c=3 HTTP/1.1\r\n";
-    std::string url2="POST /index.html HTTP/1.1\r\n";
-    std::string url3="POST /index.html/a.html?a=1&b=2&c=3 \r\n";
-    std::string url4="POST /index.html?a=1&b=2&c=3 HTTP/1.1\n";
-    std::smatch match1;
-    std::smatch match2;
-    std::smatch match3;
-    std::smatch match4;
+// void RegularHttpHeader()
+// {
+//     std::string url1="GET /dir1/dir2/a.html?a=1&b=2&c=3 HTTP/1.1\r\n";
+//     std::string url2="POST /index.html HTTP/1.1\r\n";
+//     std::string url3="POST /index.html/a.html?a=1&b=2&c=3 \r\n";
+//     std::string url4="POST /index.html?a=1&b=2&c=3 HTTP/1.1\n";
+//     std::smatch match1;
+//     std::smatch match2;
+//     std::smatch match3;
+//     std::smatch match4;
 
-    std::regex pattern1("(GET|POST|PUT|DELETE) ([^\\s?]+)(?:\\?([^\\s]+))? (HTTP/\\d\\.\\d)?\r?\n");
-    std::regex_match(url1,match1,pattern1);
-    for(auto e:match1)
-    {
-        std::cout<<e<<" ";
-    }
-    std::cout<<std::endl;
-    std::regex_match(url2,match2,pattern1);
-    for(auto e:match2)
-    {
-        std::cout<<e<<" ";
-    }
-    std::cout<<std::endl;
-    std::regex_match(url3,match3,pattern1);
-    for(auto e:match3)
-    {
-        std::cout<<e<<" ";
-    }
-    std::cout<<std::endl;
-    std::regex_match(url4,match4,pattern1);
-    for(auto e:match4)
-    {
-        std::cout<<e<<" ";
-    }
-    std::cout<<std::endl;
+//     std::regex pattern1("(GET|POST|PUT|DELETE) ([^\\s?]+)(?:\\?([^\\s]+))? (HTTP/\\d\\.\\d)?\r?\n");
+//     std::regex_match(url1,match1,pattern1);
+//     for(auto e:match1)
+//     {
+//         std::cout<<e<<" ";
+//     }
+//     std::cout<<std::endl;
+//     std::regex_match(url2,match2,pattern1);
+//     for(auto e:match2)
+//     {
+//         std::cout<<e<<" ";
+//     }
+//     std::cout<<std::endl;
+//     std::regex_match(url3,match3,pattern1);
+//     for(auto e:match3)
+//     {
+//         std::cout<<e<<" ";
+//     }
+//     std::cout<<std::endl;
+//     std::regex_match(url4,match4,pattern1);
+//     for(auto e:match4)
+//     {
+//         std::cout<<e<<" ";
+//     }
+//     std::cout<<std::endl;
 
-}
+// }
 int main()
 {
     // RegularHttpHeader();
+    TestHttpRequest();
     return 0;
 }

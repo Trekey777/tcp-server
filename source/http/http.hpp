@@ -144,7 +144,7 @@ class Util{
         return S_ISDIR(st.st_mode);
     }
 
-    static std::string EncodeUrl(const std::string& rawstr)
+    static std::string EncodeUrl(const std::string& rawstr,bool is_query=false)
     {
         //非ascii字符集->转换为有效的ASCII字符集
         //编码字符->%HH格式
@@ -159,7 +159,7 @@ class Util{
                 url+=s;
                 continue;
             }
-            if(s==' ')
+            if(s==' '&&is_query==true)
             {
                 url+='+';
                 continue;
@@ -190,7 +190,7 @@ class Util{
         }
 
     }
-    static std::string DecodeUrl(const std::string& url )
+    static std::string DecodeUrl(const std::string& url,bool is_query=false)
     {
         std::string str;
         for(int i=0;i<url.size();i++)
@@ -201,7 +201,7 @@ class Util{
                 str+=s;
                 continue;
             }
-            if(s=='+')
+            if(s=='+'&&is_query==true)
             {
                 str+=' ';
                 continue;
@@ -256,7 +256,7 @@ class HttpRequest{
     std::string _path;
     std::string _version;
     std::string _body;
-    std::smatch _match;//正则表达式结果
+    std::smatch _matches;//正则表达式结果
     std::unordered_map<std::string,std::string> _headers;
     std::unordered_map<std::string,std::string> _params;
     public:
@@ -266,6 +266,8 @@ class HttpRequest{
         _method.clear();
         _path.clear();
         _version="HTTP/1.1";
+        std::smatch matches;
+        _matches.swap(matches);
         _body.clear();
         _headers.clear();
         _params.clear();
@@ -325,15 +327,15 @@ class HttpRequest{
         }
         return false;
     }
-    std::string GetContentLength()
+    long GetContentLength()
     {
         std::string s=GetHeader("Content-Length");
-        return s;
+        return stol(s);
     }
     
     //获取正文长度
     //判断是否短连接
-    bool GetConnection()
+    bool IsLongConnection()
     {
         std::string s=GetHeader("Connection");
         if(s=="keep-alive"){
@@ -342,3 +344,236 @@ class HttpRequest{
         return false;
     }
 };
+//HTTP接收状态枚举
+// HTTP响应类
+//组装响应报文返回给客户端
+// 版本 状态码 状态码的意思\r\n
+// 报头字段
+// 重定向url
+// 报文内容
+class HttpResponse{
+    public:
+    std::string _version;
+    int _status;
+    bool _is_redirect;
+    std::string _redirect_url;
+    std::unordered_map<std::string,std::string> _headers;
+    std::string _body;
+    public:
+    HttpResponse():_is_redirect(false),_status(201),_version("HTTP/1.1"){}
+    void Reset()
+    {
+        _version="HTTP/1.1";
+        _status=201;
+        _is_redirect=false;
+        _redirect_url.clear();
+        _headers.clear();
+        _body.clear();
+    }
+    bool InsertHeader(const std::string& key,const std::string& value)
+    {
+        _headers.insert({key,value});
+        return true;
+    }
+    bool HasHeader(const std::string& key)
+    {
+        auto it=_headers.find(key);
+        if(it==_headers.end())
+        {
+            return false;
+        }
+        return true;
+    }
+    std::string GetHeader(const std::string& key)
+    {
+        auto it=_headers.find(key);
+        if(it!=_headers.end())
+        {
+            return it->second;
+        }
+        return "";
+    }
+    void SetContent(const std::string& content,const std::string& type="text/html")
+    {
+        _body=content;
+        InsertHeader("Content-Type",type);
+    }
+    void SetRedirct(const std::string& url, int status=302)
+    {
+        _status=status;
+        _redirect_url=url;
+    }
+    bool Close()
+    {
+        if(GetHeader("Connection")=="keep-alive")
+        {
+            return true;
+        }
+        return false;
+    }
+
+};
+// HTTP报文解析状态响应状态
+//解析请求行 头 报文 结束
+typedef enum{
+    HTTP_RECV_ERROR,
+    HTTP_RECV_LINE,
+    HTTP_RECV_HEADER,
+    HTTP_RECV_BODY,
+    HTTP_RECV_OVER
+}HttpRecvStatu;
+#define MAXLINE 1024
+//报文解析类
+class HttpContent{
+public:
+    HttpRecvStatu _recv_statu;
+    int _statu_code;
+    HttpRequest _request;
+
+    // 1.解析请求行ParseHttpLine-> 方法 资源路径查询字符串 版本\r\n
+    bool ParseHttpLine( std::string& httpline)
+    {
+
+        std::smatch matches;
+        std::regex pattern("(GET|POST|PUT|DELETE) ([^\\s?]+)(?:\\?([^\\s]))? (HTTP\\d\\.\\d)\r?\n");
+        bool ret=std::regex_match(httpline,matches,pattern);
+        if(ret==false)
+        {
+            ERROR_LOG("Regex match Error");
+            return false;
+        }
+        _request._method=matches[1];
+        _request._path=matches[2];
+        // a=3&b=2+3;
+        std::vector<std::string> array;
+        Util::SeperateString(matches[3],"&",&array);
+        for(auto&e :array)
+        {
+            std::vector<std::string> param_array;
+            Util::SeperateString(e,"=",&param_array);
+            std::string key=Util::DecodeUrl(param_array[0],true);
+            std::string value=Util::DecodeUrl(param_array[1],true);
+            _request.InsertParam(key,value);
+        }
+        _request._version=matches[4];
+        return true;
+    }
+    bool RecvHttpLine( Buffer& buffer)
+    {
+        // 2.接收请求行-> 获取一行数据->判断太长，太短->http报头行解析->更新状态
+        if(_recv_statu!=HTTP_RECV_HEADER)return false;
+        std::string httpline=buffer.ReadAsLine();
+        if(httpline==""){
+            //判断buffer内部大小
+            if(buffer.ReadAbleSize()>MAXLINE)
+            {
+                _recv_statu=HTTP_RECV_ERROR;
+                _statu_code=414;//URL too long
+                return false;
+            }
+            else{
+                return true;
+            }
+        }
+        //对httpline判断
+        if(httpline.size()>MAXLINE)
+        {
+            _recv_statu=HTTP_RECV_ERROR;
+            _statu_code=414;
+            return false;
+        }
+        bool ret=ParseHttpLine(httpline);
+        if(ret==true){
+            _recv_statu=HTTP_RECV_HEADER;
+            return true;
+        }
+        else
+        {
+            _statu_code=400;//Bad Request
+            _recv_statu=HTTP_RECV_ERROR;       
+            return false;
+        }
+
+    }
+    bool RecvHttpHeader(Buffer& buff)
+    {
+        // 3. 接收头处理
+        if(_recv_statu!=HTTP_RECV_HEADER)return false;
+        while(1)
+        {
+            std::string httpheader=buff.ReadAsLine();
+            if(httpheader=="")
+            {
+                if(buff.ReadAbleSize()>MAXLINE)
+                {
+                    _statu_code=400;
+                    _recv_statu=HTTP_RECV_ERROR;
+                    return false;
+                } 
+                return true;   
+            }
+            if(httpheader.size()>MAXLINE)
+            {
+                _statu_code=400;
+                _recv_statu=HTTP_RECV_ERROR;
+                return false;
+            }
+            bool ret=ParseHttpHeader(httpheader);
+            if(!ret)
+            {
+                _statu_code=400;
+                _recv_statu=HTTP_RECV_ERROR;
+                return false;
+            }
+            if(httpheader=="\r\n"||httpheader=="\n");
+            {
+                break;
+            }
+        }
+        _statu_code=200;
+        _recv_statu=HTTP_RECV_BODY;
+        return true;
+
+    }
+    bool ParseHttpHeader(std::string& httpheader)
+    {
+        // 4. 解析报头处理
+        std::string header=httpheader;
+        if(httpheader.back()=='\n'){header.pop_back();}
+        if(httpheader.back()=='\r'){header.pop_back();}
+        std::vector<std::string> array;
+        Util::SeperateString(header,":",&array);
+        if(array.size()==0){return false;}
+        _request.InsertHeader(array[0],array[1]);
+        return true;
+    }
+    bool RecvHttpBody( Buffer& buff)
+    {
+        // 5. 解析报文处理
+        if(_recv_statu!=HTTP_RECV_BODY)return false;
+        int needsize=_request.GetContentLength()-_request._body.size();
+        if(needsize>buff.ReadAbleSize())
+        {
+            _request._body.append(buff.ReadAsString(buff.ReadAbleSize()));
+            return true;
+        }
+        _request._body.append(buff.ReadAsString(needsize));
+        _statu_code=200;
+        _recv_statu=HTTP_RECV_OVER;
+        return true;
+    }
+    // bool ParseHttpBody()
+    // {
+    //     // 6. 接收报文处理
+    // }
+    HttpContent():_recv_statu(HTTP_RECV_LINE),_statu_code(200){}
+    void RecvHttp( Buffer& buff)
+    {
+        switch(_recv_statu){
+        case HTTP_RECV_LINE:RecvHttpLine(buff);
+        case HTTP_RECV_HEADER:RecvHttpHeader(buff);
+        case HTTP_RECV_BODY:RecvHttpBody(buff);
+        }
+    }
+};
+
