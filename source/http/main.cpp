@@ -67,9 +67,9 @@ void TestRecvRequest()
     Buffer inbuff;
     inbuff.WriteAsString(httpr);
     HttpContent hc;
-    hc.RecvHttp(inbuff);
+    hc.RecvHttp(&inbuff);
     HttpRequest request=hc.RecvRequest();
-    std::cout<<hc.RecvStatu()<<std::endl;
+    std::cout<<hc.StatuCode()<<std::endl;
     std::cout<<request._method<<std::endl;
     std::cout<<request._path<<std::endl;
     std::cout<<request._version<<std::endl;
