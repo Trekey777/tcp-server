@@ -418,9 +418,12 @@ public:
         if(end!=_end)
         {
             count=end-_start+1;//包含\n
+            return ReadAsString(count);
         }
-        else{count=_end-_start;}//读到结尾都没有/n
-        return ReadAsString(count);
+        else{
+            return "";
+        }//end==_end
+        
     }
 };
 // 对事件的封装 只涉及最简单的读写挂起错误监控

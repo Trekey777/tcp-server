@@ -403,10 +403,11 @@ class HttpResponse{
         _status=status;
         _redirect_url=url;
     }
-    bool Close()
+    bool IsLongConnection()
     {
         if(GetHeader("Connection")=="keep-alive")
         {
+            std::cout<<GetHeader("Connection")<<std::endl;
             return true;
         }
         return false;
@@ -435,7 +436,7 @@ public:
     {
 
         std::smatch matches;
-        std::regex pattern("(GET|POST|PUT|DELETE) ([^\\s?]+)(?:\\?([^\\s]))? (HTTP\\d\\.\\d)\r?\n");
+        std::regex pattern("(GET|POST|PUT|DELETE) ([^\\s?]+)(?:\\?([^\\s]))? (HTTP/\\d\\.\\d)\r?\n");
         bool ret=std::regex_match(httpline,matches,pattern);
         if(ret==false)
         {
@@ -460,8 +461,10 @@ public:
     }
     bool RecvHttpLine( Buffer& buffer)
     {
+        
         // 2.接收请求行-> 获取一行数据->判断太长，太短->http报头行解析->更新状态
-        if(_recv_statu!=HTTP_RECV_HEADER)return false;
+        if(_recv_statu!=HTTP_RECV_LINE)return false;
+        DEBUG_LOG("RecvHttpLine");
         std::string httpline=buffer.ReadAsLine();
         if(httpline==""){
             //判断buffer内部大小
@@ -493,12 +496,14 @@ public:
             _recv_statu=HTTP_RECV_ERROR;       
             return false;
         }
-
+        
     }
     bool RecvHttpHeader(Buffer& buff)
     {
         // 3. 接收头处理
+        
         if(_recv_statu!=HTTP_RECV_HEADER)return false;
+        DEBUG_LOG("RecvHttpHeader");
         while(1)
         {
             std::string httpheader=buff.ReadAsLine();
@@ -550,8 +555,10 @@ public:
     bool RecvHttpBody( Buffer& buff)
     {
         // 5. 解析报文处理
+
         if(_recv_statu!=HTTP_RECV_BODY)return false;
-        int needsize=_request.GetContentLength()-_request._body.size();
+        DEBUG_LOG("RecvHttpBody");
+        size_t needsize=(size_t)_request.GetContentLength()-_request._body.size();
         if(needsize>buff.ReadAbleSize())
         {
             _request._body.append(buff.ReadAsString(buff.ReadAbleSize()));
@@ -567,13 +574,47 @@ public:
     //     // 6. 接收报文处理
     // }
     HttpContent():_recv_statu(HTTP_RECV_LINE),_statu_code(200){}
-    void RecvHttp( Buffer& buff)
+    void ReSet(){
+        _statu_code=200;
+        _recv_statu=HTTP_RECV_LINE;
+        _request.Reset();
+    }
+    int StatuCode()
+    {
+        return _statu_code;
+    }
+    HttpRecvStatu RecvStatu()
+    {
+        return _recv_statu;
+    }
+    HttpRequest& RecvRequest()
+    {
+        return _request;
+    }
+    void RecvHttp(Buffer& buff)
     {
         switch(_recv_statu){
         case HTTP_RECV_LINE:RecvHttpLine(buff);
         case HTTP_RECV_HEADER:RecvHttpHeader(buff);
         case HTTP_RECV_BODY:RecvHttpBody(buff);
         }
+        return;
     }
 };
+class HttpServer{
+    // 私有变量
+    
+    //1. GET POST DELETE POST 的方法的处理函数数组 接收Request 返回Response
+    //2. 静态资源根目录
+    //3. TcpServer
 
+    //4. 错误处理 ->构建错误页面
+    //5. 构建响应代码 response->响应报文->缓冲区发送
+    //6. 是否请求文件 相对根目录存在->方法限定->路径合法-> 路径变换->路径合并/自动补充->文件类型
+    //7. 静态资源请求处理 读取文件内容
+    //8. 功能型请求的分发处理 req rsp handlers 比如数据库之类的
+    //9. 区分静态资源请求和功能性请求
+    //10. 设置解析上下文
+    //11. 缓冲区数据解析+处理 获取上下文  根据状态码判断 路由处理 重置上下文 短连接关闭
+    //12. 路由表添加方法
+};

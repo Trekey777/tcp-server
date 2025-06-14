@@ -60,6 +60,27 @@ void TestHttpRequest()
     std::cout<<"Connection"<<request.IsLongConnection()<<std::endl;
     request.Reset();
 }
+void TestRecvRequest()
+{
+    std::string body("<!DOCTYPE html><html>hellow word!</html>");
+    std::string httpr="GET /dir1/dir2/index.html HTTP/1.1\r\nContent-Length:"+std::to_string(body.size())+"\r\nConnection:keep-alive\r\n\r\n"+body;
+    Buffer inbuff;
+    inbuff.WriteAsString(httpr);
+    HttpContent hc;
+    hc.RecvHttp(inbuff);
+    HttpRequest request=hc.RecvRequest();
+    std::cout<<hc.RecvStatu()<<std::endl;
+    std::cout<<request._method<<std::endl;
+    std::cout<<request._path<<std::endl;
+    std::cout<<request._version<<std::endl;
+    for(auto& e: request._headers)
+    {
+        std::cout<<e.first<<":"<<e.second<<std::endl;
+    }
+    std::cout<<request._body<<std::endl;
+    std::cout<<"Content-Length: "<<request.GetContentLength()<<std::endl;
+    std::cout<<"Connection: "<<request.IsLongConnection()<<std::endl;
+}
 // void RegularHttpHeader()
 // {
 //     std::string url1="GET /dir1/dir2/a.html?a=1&b=2&c=3 HTTP/1.1\r\n";
@@ -101,6 +122,6 @@ void TestHttpRequest()
 int main()
 {
     // RegularHttpHeader();
-    TestHttpRequest();
+    TestRecvRequest();
     return 0;
 }
