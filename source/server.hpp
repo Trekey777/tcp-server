@@ -437,6 +437,7 @@ private:
     int _fd; //触发事件的文件描述符
     std::string _name;
     EventLoop* _loop;
+    bool _removed=false;
     using Callback=std::function<void()>;
     Callback _read_callback;// EPOLLIN //EPOLLRDHUP(发送剩下的数据)
     Callback _write_callback;//EPOLLOUT 
@@ -452,6 +453,9 @@ public:
     void SetRevents(int events){_revents=events;}
     void Clear(){_events=0;_revents=0;}
     const char* GetName(){return _name.c_str(); }
+    bool IsRemoved() const { return _removed; }
+    // 设置移除状态（在Remove()中调用）
+    void SetRemoved() { _removed = true; }
     //设置回调
     void SetReadCallback(const Callback& cb)
     {
@@ -488,24 +492,27 @@ public:
     void HandleEvent(){//顺序问题
         if(_revents&EPOLLERR)
         {
-            DEBUG_LOG("ERRORCALLBACK");
+            DEBUG_LOG("%s ERRORCALLBACK",_name.c_str());
             _error_callback();
             return;
         }
         if(_revents&EPOLLHUP) //连接双方关闭
         {
-            DEBUG_LOG("ClosedCALLBACK");
+            DEBUG_LOG("%s ClosedCALLBACK",_name.c_str());
             _closed_callback();
             return;
         }
         if(_revents&EPOLLIN)//对端关闭发送Fin包
         {
-            DEBUG_LOG("ReadCALLBACK");
+            if(_name!="TimerWheel"){
+                DEBUG_LOG("%s ReadCALLBACK",_name.c_str());
+            }
+            
             _read_callback();
         }
         if(_revents&EPOLLOUT)
         {
-            DEBUG_LOG("WRITECALLBACK");
+            DEBUG_LOG("%s WRITECALLBACK",_name.c_str());
             _write_callback();
         }
         if(_event_callback){
@@ -557,7 +564,7 @@ private:
         else{
             DEBUG_LOG("%s EVENTS DELETE Success",channel_name);
         }
-        _channels[ptr->Fd()]=ptr;
+        
     }
     // 可能会出现重复的情况
     bool HasChannel(Channel* channel){
@@ -574,11 +581,19 @@ public:
     {
             //每次都用新的events数组，不然需要手动删除
             int nfds=epoll_wait(_epfd,_evs,MAX_EPOLLEVENTS,-1);
-            if(nfds==-1){ERROR_LOG("EPOLL WAIT ERROR");abort();}
-            else{
+            //nfds==-1可能是因为被信号打断此时不应该结束
+            if(nfds<0)
+            {
+                if(errno==EINTR)
+                {
+                    return;
+                }
+                ERROR_LOG("EPOLL WAIT ERROR");abort();
+            }
+            else
+            {
                for(int i=0;i<nfds;i++)
                {
-
                 Channel* ptr=static_cast<Channel*>(_evs[i].data.ptr);
                 ptr->SetRevents(_evs[i].events);
                 ptr->HandleEvent();
@@ -586,13 +601,28 @@ public:
                }
             }
     }
-    void UpdateEvent(Channel* pch){
-        if(HasChannel(pch)){Update(EPOLL_CTL_MOD,pch);}
-         else{Update(EPOLL_CTL_ADD,pch);}}
+    void UpdateEvent(Channel* pch)
+    {
+        if(HasChannel(pch))
+        {
+            Update(EPOLL_CTL_MOD,pch);
+        }
+        else
+        {
+            Update(EPOLL_CTL_ADD,pch);
+        _channels.insert({pch->Fd(),pch});
+        }
+    }
     void RemoveEvent(Channel* pch){
         if(HasChannel(pch))
         {
+
             Update(EPOLL_CTL_DEL,pch);
+            auto it=_channels.find(pch->Fd());
+            if(it!=_channels.end())
+            {
+                _channels.erase(it);
+            }
         }
         else{
             ERROR_LOG("Delete Nonexist Event");
@@ -792,13 +822,12 @@ class EventLoop{
     }
     void Start()
     {
-        DEBUG_LOG("Thread:%d Run Start",_thread_id);
         while(1){
             
             std::vector<Channel*> channels;
             _poller.Poll(channels);
             RunTask();
-        }
+        } 
 
     }
     bool IsInLoop()
@@ -817,7 +846,8 @@ class EventLoop{
     {
         if(IsInLoop()){
             //很重要 用于主线程Start()前执行
-            cb();
+            return cb();
+
         }
        
         return QueueInLoop(cb);
@@ -865,6 +895,8 @@ class EventLoop{
 
 void Channel::Remove()
 {
+    SetRemoved();
+    DEBUG_LOG("Remove Channel: fd=%d, ptr=%p", _fd, this);
     return _loop->RemoveEvent(this);
 }
 void Channel::Update(){return _loop->UpdateEvent(this);}
@@ -969,7 +1001,7 @@ private:
             ssize_t ret=_socket.NonBlockingRecv(buff,sizeof(buff));
             if(ret<0)
             {
-                DEBUG_LOG("HANDLE READ ERROR, READ %d bytes",ret);
+                DEBUG_LOG("HANDLE READ ERROR, READ %d bytes",static_cast<int>(ret));
                 assert(fcntl(_sockfd,F_GETFD)!=-1);
                 //出错了不关闭连接
                 return ShutdownInLoop();
