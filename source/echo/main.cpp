@@ -480,12 +480,11 @@ class EchoServer {
             DEBUG_LOG("CLOSE OnMessage:%p", conn.get());
             conn->Send(buf->ReadPosition(), buf->ReadAbleSize());
             buf->RMoveOffset(buf->ReadAbleSize());
-            // conn->Shutdown();
         }
     public:
         EchoServer(int port):_server(port) {
-            _server.SetThreadCount(1);
-            // _server.EnableInactiveRelease(10);
+            _server.SetThreadCount(3);
+            _server.EnableInactiveRelease(8);
             _server.SetClosedCallback(std::bind(&EchoServer::OnClosed, this, std::placeholders::_1));
             _server.SetConnectedCallback(std::bind(&EchoServer::OnConnected, this, std::placeholders::_1));
             _server.SetMessageCallback(std::bind(&EchoServer::OnMessage, this, std::placeholders::_1, std::placeholders::_2));

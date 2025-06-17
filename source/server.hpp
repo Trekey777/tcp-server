@@ -238,7 +238,7 @@ private:
             return new Derived<T>(_val);
         }
         //typedid(T)返回一个const type_info对象，拷贝构造函数私有，绕开返回值的拷贝构造，直接用const 引用接收右值
-        const std::type_info& type(){return typeid(T);}
+        const std::type_info& type()const override{return typeid(T);}
         ~Derived(){}
     };
     Base* _content=nullptr; //使用基类指针不用指定类型
@@ -265,7 +265,7 @@ public:
     {
         //要访问成员变量，必须换成派生类指针，判断返回值是否为空
         assert(typeid(T)==_content->type());
-        Derived<T> ptr=dynamic_cast<Derived<T>*>(_content);
+        Derived<T>* ptr=dynamic_cast<Derived<T>*>(_content);
         if(ptr==nullptr)
         {
             ERROR_LOG("Any Cast ERROR");abort();
@@ -895,8 +895,6 @@ class EventLoop{
 
 void Channel::Remove()
 {
-    SetRemoved();
-    DEBUG_LOG("Remove Channel: fd=%d, ptr=%p", _fd, this);
     return _loop->RemoveEvent(this);
 }
 void Channel::Update(){return _loop->UpdateEvent(this);}
@@ -1071,7 +1069,7 @@ private:
             _channel.Remove();
             _socket.Close();
 
-            // if(_loop->HasTimer(_connid)){CancelInactiveReleaseInLoop();};//异步函数
+            if(_loop->HasTimer(_connid)){CancelInactiveReleaseInLoop();};//异步函数
             if(_closed_callback) _closed_callback(shared_from_this());
             if(_server_closed_callback) _server_closed_callback(shared_from_this());
         }
@@ -1181,7 +1179,7 @@ private:
         }
         //启动非活跃释放连接
         void EnableInactiveRelease(int sec){
-            _loop->RunInLoop(std::bind(&Connection::EnableInactiveRelease,this,sec));
+            _loop->RunInLoop(std::bind(&Connection::EnableInactiveReleaseInLoop,this,sec));
         }
         //取消非活跃释放连接
         void CancelInactiveRelease(){
@@ -1266,7 +1264,7 @@ class TcpServer{
             conn->SetConnectedCallback(_connected_callback);
             conn->SetAnyEventCallback(_event_callback);
             conn->SetSrvClosedCallback(std::bind(&TcpServer::RemoveConnection,this,std::placeholders::_1));
-            // if(_enable_inactive_release) conn->EnableInactiveRelease(_timeout);
+            if(_enable_inactive_release) conn->EnableInactiveRelease(_timeout);
             conn->Established();
             _conns.insert(std::make_pair(_next_id,conn));
         }
