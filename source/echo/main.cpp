@@ -480,7 +480,7 @@ class EchoServer {
             DEBUG_LOG("CLOSE OnMessage:%p", conn.get());
             conn->Send(buf->ReadPosition(), buf->ReadAbleSize());
             buf->RMoveOffset(buf->ReadAbleSize());
-            conn->Shutdown();
+            // conn->Shutdown();
         }
     public:
         EchoServer(int port):_server(port) {
